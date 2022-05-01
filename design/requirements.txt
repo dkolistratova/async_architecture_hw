@@ -1,0 +1,102 @@
+Таск-трекер
+o	Actor — Account
+o	Query — show dashboard
+o	Data — Session id, path
+o	Event — Page shown
+
+o	Actor — Account
+o	Command — Login to task tracker app
+o	Data — User credentials
+o	Event — Account.LoggedIn
+
+o	Actor — Account (admin?)
+o	Command — Create / Update/ Delete another account
+o	Data — Another account id, account details
+o	Event — Account.Updated/Created/Deleted
+
+o	Actor — Account (any role)
+o	Command — Create task
+o	Data — Description, status, assignedTo
+o	Event — Task.Created
+
+o	Actor — Account (manager/admin role)
+o	Command — Reassign tasks
+o	Data — task list
+o	Event —all open tasks are randomly assigned to popug
+
+o	Actor — Account (any role)
+o	Query — show my task list
+o	Data — account id
+o	Event — task shown
+
+o	Actor — Account (any role)
+o	Command — Mark task complete
+o	Data — account id, task id
+o	Event — Task.Status = complete
+
+Аккаунтинг: кто сколько денег заработал
+o	Actor — Account (admin/accounter role)
+o	Query — Get stats, earned money
+o	Data — account id, role
+o	Event — stats shown
+
+o	Actor — Account (pupug  role)
+o	Query — Get balance + audit log
+o	Data — account id, role
+o	Event — page shown
+
+o	Actor — Service
+o	Query — assign task a price
+o	Data — task id, price
+o	Event — task.price set
+
+o	Actor — Service
+o	Query — withdraw/add money from popug balance
+o	Data — popug  id, money
+o	Event — popug.balance take/add money
+
+o	Actor — Service
+o	Query — assign task a price
+o	Data — task id, price
+o	Event — task.price set
+
+o	Actor — Service
+o	Query — calculate money for popug for today
+o	Data — popug id
+o	Event — sum calculated
+
+o	Actor — Service
+o	Query — send mail
+o	Data — body, email
+o	Event — email sent
+
+o	Actor — Service
+o	Query — assign task a price
+o	Data — task id, price
+o	Event — task.price set
+
+o	Actor — Service
+o	Query — add/remove item to audit log
+o	Data — account id, action
+o	Event — log added/removed
+
+o	Actor — Account
+o	Query — show dashboard
+o	Data — Session id, path
+o	Event — Page shown
+
+Аналитика
+o	Actor — Account
+o	Query — show dashboard
+o	Data — Session id, path
+o	Event — Page shown
+
+o	Actor — Service
+o	Query — calculate the most expensive task
+o	Data — period for calculation
+o	Event — show price
+
+o	Actor — Service
+o	Query — calculate how many popugs below 0
+o	Data — ?
+o	Event — number shown
