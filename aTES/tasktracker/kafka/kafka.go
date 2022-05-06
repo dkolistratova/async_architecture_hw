@@ -75,7 +75,7 @@ func (consumer *Consumer) Run() {
 }
 
 func (c *Consumer) processAccountsBEvts(msg *kafka.Message) error {
-	var payload AccountsEvent
+	var payload Event
 	err := json.Unmarshal(msg.Value, &payload)
 	if err != nil {
 		return err
@@ -109,7 +109,7 @@ func (c *Consumer) processAccountsBEvts(msg *kafka.Message) error {
 }
 
 func (c *Consumer) processAccountsCUDs(msg *kafka.Message) error {
-	var payload AccountsEvent
+	var payload Event
 	err := json.Unmarshal(msg.Value, &payload)
 	if err != nil {
 		return err
@@ -152,12 +152,13 @@ func (c *Consumer) processAccountsCUDs(msg *kafka.Message) error {
 	return nil
 }
 
-type AccountsEvent struct {
-	EventID      string `json:"event_id"`
-	EventVersion int64  `json:"event_version"`
-	EventTime    string `json:"event_time"`
-	Producer     string `json:"producer"`
-	EventName    string `json:"event_name"`
+type Event struct {
+	EventID      string      `json:"event_id"`
+	EventVersion int64       `json:"event_version"`
+	EventTime    string      `json:"event_time"`
+	Producer     string      `json:"producer"`
+	EventName    string      `json:"event_name"`
+	Data         interface{} `json:"data"`
 }
 
 type AccountUpdatePayload struct {
@@ -174,4 +175,109 @@ type RoleChangePayload struct {
 		PublicID string `json:"public_id"`
 		Role     string `json:"role"`
 	} `json:"data"`
+}
+
+type Producer struct {
+	*kafka.Producer
+	deliveryCh chan kafka.Event
+}
+
+func NewProducer() *Producer {
+	conf := kafka.ConfigMap{
+		"bootstrap.servers": "broker:9092",
+		"client.id":         "localhost:3002",
+		"acks":              "all",
+	}
+	pr, err := kafka.NewProducer(&conf)
+	if err != nil {
+		log.Println("consumer failed", err)
+		os.Exit(1)
+	}
+
+	return &Producer{
+		Producer:   pr,
+		deliveryCh: make(chan kafka.Event, 10000),
+	}
+}
+
+func (p *Producer) Run() {
+	defer p.Producer.Close()
+
+	go func() {
+		for {
+			for e := range p.Events() {
+				switch ev := e.(type) {
+				case *kafka.Message:
+					if ev.TopicPartition.Error != nil {
+						fmt.Printf("Failed to deliver message: %v\n", ev.TopicPartition)
+					} else {
+						fmt.Printf("Successfully produced record to topic %s partition [%d] @ offset %v\n",
+							*ev.TopicPartition.Topic, ev.TopicPartition.Partition, ev.TopicPartition.Offset)
+					}
+				}
+			}
+		}
+	}()
+}
+
+func (p *Producer) TaskCreatedMsg(t db.Task) error {
+	msg, err := getTaskEvt(t, "TaskCreated")
+	if err != nil {
+		return err
+	}
+	topic := "tasks-stream"
+	return p.Produce(&kafka.Message{
+		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
+		Value:          msg},
+		p.deliveryCh,
+	)
+}
+
+func (p *Producer) TaskUpdatedMsg(t db.Task) error {
+	msg, err := getTaskEvt(t, "TaskUpdated")
+	if err != nil {
+		return err
+	}
+	topic := "tasks-stream"
+	return p.Produce(&kafka.Message{
+		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
+		Value:          msg},
+		p.deliveryCh,
+	)
+}
+
+func (p *Producer) TaskCompleted(t db.Task) error {
+	msg, err := getTaskEvt(t, "TasCompleted")
+	if err != nil {
+		return err
+	}
+	topic := "tasks"
+	return p.Produce(&kafka.Message{
+		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
+		Value:          msg},
+		p.deliveryCh,
+	)
+}
+
+func (p *Producer) TaskAssigned(t db.Task) error {
+	msg, err := getTaskEvt(t, "TasAssigned")
+	if err != nil {
+		return err
+	}
+	topic := "tasks"
+	return p.Produce(&kafka.Message{
+		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
+		Value:          msg},
+		p.deliveryCh,
+	)
+}
+
+func getTaskEvt(t db.Task, evtName string) ([]byte, error) {
+	return json.Marshal(Event{
+		EventID:      uuid.NewString(),
+		EventVersion: 1,
+		EventTime:    time.Now().String(),
+		EventName:    evtName,
+		Data:         t,
+	})
 }

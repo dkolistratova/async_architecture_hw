@@ -29,7 +29,7 @@ var (
 			AuthURL:  "http://localhost:3000/oauth/authorize",
 			TokenURL: "http://oauth:3000/oauth/token",
 		},
-		Scopes: []string{"email"},
+		Scopes: []string{"all"},
 	}
 	globalSessions   *session.Manager
 	accountsToUpdate map[uuid.UUID]bool
@@ -46,7 +46,8 @@ func init() {
 
 type Server struct {
 	*webserver.Server
-	dbConn db.Connection
+	dbConn   db.Connection
+	producer *kafka.Producer
 }
 
 func main() {
@@ -56,7 +57,6 @@ func main() {
 	}
 	srv.AddHandler("/login", login)
 	srv.AddHandler("/oauth2", oauth)
-	srv.AddHandle("/", authHandler(http.HandlerFunc(home)))
 	srv.AddHandle("/tasks", authHandler(http.HandlerFunc(srv.listTasks)))
 	srv.AddHandle("/create", authHandler(http.HandlerFunc(srv.createTask)))
 	srv.AddHandle("/update", authHandler(http.HandlerFunc(srv.updateTask)))
@@ -78,6 +78,11 @@ func main() {
 			RoleChanges: ch,
 		}
 		c.Run()
+	}()
+
+	srv.producer = kafka.NewProducer()
+	go func() {
+		srv.producer.Run()
 	}()
 
 	log.Println("Running server....", "port", port)
@@ -162,7 +167,7 @@ func (srv *Server) shuffleTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	var accs []uuid.UUID
 	for _, a := range allAccs {
-		if *a.Role == db.Role_Worker {
+		if a.Role == nil || *a.Role == db.Role_Worker {
 			accs = append(accs, a.PublicID)
 		}
 	}
@@ -177,6 +182,9 @@ func (srv *Server) shuffleTasks(w http.ResponseWriter, r *http.Request) {
 			t.OwnerID = accs[rand.Intn(len(accs))]
 			if err := srv.dbConn.SaveTask(&t); err != nil {
 				log.Println("task save failed", err)
+			} else {
+				srv.producer.TaskUpdatedMsg(t)
+				srv.producer.TaskAssigned(t)
 			}
 		}
 	}
@@ -198,11 +206,13 @@ func (srv *Server) updateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := srv.dbConn.UpdateTask(vals.Get("public_id"), "", vals.Get("status"))
+	t, err := srv.dbConn.UpdateTask(vals.Get("public_id"), "", vals.Get("status"))
 	if err != nil {
 		log.Println("failed to update task", err)
 		internalError(w)
 		return
+	} else {
+		srv.producer.TaskUpdatedMsg(*t)
 	}
 	http.Redirect(w, r, "/tasks", http.StatusTemporaryRedirect)
 }
@@ -260,10 +270,16 @@ func (srv *Server) createTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Println(srv.dbConn.Create(&db.Task{PublicID: uuid.New(), Description: vals.Get("description"), OwnerID: accs[rand.Intn(len(accs))]}))
+	t := &db.Task{PublicID: uuid.New(), Description: vals.Get("description"), OwnerID: accs[rand.Intn(len(accs))]}
+
+	if err := srv.dbConn.Create(t); err != nil {
+		log.Println(err)
+	} else {
+		srv.producer.TaskCreatedMsg(*t)
+		srv.producer.TaskAssigned(*t)
+	}
 	log.Println("creating task with vals", vals)
 	w.Write([]byte("Done!"))
-
 }
 
 func oauth(w http.ResponseWriter, r *http.Request) {
@@ -290,16 +306,7 @@ func oauth(w http.ResponseWriter, r *http.Request) {
 		ses.Set("account", *acc)
 	}
 
-	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
-}
-
-func home(w http.ResponseWriter, r *http.Request) {
-	acc, err := getCurrentUser(w, r)
-	if err != nil {
-		internalError(w)
-		return
-	}
-	w.Write([]byte("Hello, " + acc.Email))
+	http.Redirect(w, r, "/tasks", http.StatusTemporaryRedirect)
 }
 
 func login(w http.ResponseWriter, r *http.Request) {
