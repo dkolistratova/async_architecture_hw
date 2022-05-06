@@ -1,0 +1,30 @@
+{{ define "create" }}
+<!DOCTYPE html>
+<html>
+	<style>
+	.row{
+		display: table-row;
+	}
+	.cell{
+		display: table-cell;
+	}
+	.required{
+		color: red
+	}
+	</style>
+	<body>
+		<h2>Task create:</h2>
+		<form action="/create" method="POST">
+				<div class="row">
+					<div class="cell"><span class="required">*</span>Description:</div>
+					<div class="cell"><input type="text" name="description" id="description" required/></div>
+				</div>
+			<br/>
+			<span class="required">*</span>Required
+			<br/>
+
+			<input type="submit" value="Submit" id="submitBtn"/>
+		</form>
+	</body>
+</html>
+{{ end }}

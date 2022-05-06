@@ -1,0 +1,46 @@
+{{ define "list" }}
+<!DOCTYPE html>
+<html lang="en">
+<body>
+
+<table>
+  <tr>
+    <th><h1>Tasks</h1></th>
+    <th></th>
+    {{ if .AllowReassign }}
+    <th>
+      <form action="/shuffle" method="GET">
+      <input type="submit" value="Reassign all tasks" id="submitBtn"/>
+    </form>
+    </th>
+    {{ end }}
+  </tr>
+</table>
+
+<table border="1">
+    <tr>
+      <th>public_id</th>
+      <th>owner</th>
+      <th>status</th>
+      <th>description</th>
+    </tr>
+        {{ range .Tasks }}
+        <tr>
+        <td>{{ .PublicID }}</td>
+        <td>{{ .OwnerID }}</td>
+        <td>{{ .Status.String }}</td>
+        <td>{{ .Description }}</td>
+        <td>
+          <form action="/update" method="POST">
+          <input type="hidden" name="public_id" value="{{ .PublicID }}"/>
+          <input type="hidden" name="status" value="done"/>
+          <input type="submit" value="Mark Done" id="submitBtn"/>
+          </form>
+        </td>
+      </tr>
+        {{ end }}
+</table>
+
+</body>
+</html>
+{{ end }}
