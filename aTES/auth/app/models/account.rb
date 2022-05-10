@@ -21,7 +21,8 @@ class Account < ApplicationRecord
     accounter: 'accounter'
   }
 
-  after_create do
+  after_commit do
+    self.reload
     account = self
 
     # ----------------------------- produce event -----------------------
@@ -39,6 +40,7 @@ class Account < ApplicationRecord
       }
     }
     # result = SchemaRegistry.validate_event(event, 'accounts.created', version: 1)
+    pp event
 
     # if result.success?
     Producer.new.call(event, topic: 'accounts-stream')
