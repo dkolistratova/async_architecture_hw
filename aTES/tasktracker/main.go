@@ -9,7 +9,8 @@ import (
 	"net/http"
 	"sync"
 	"tasktracker/db"
-	"tasktracker/kafka"
+	"tasktracker/kafka/consumer"
+	"tasktracker/kafka/producer"
 	"tasktracker/webserver"
 	"text/template"
 
@@ -47,7 +48,7 @@ func init() {
 type Server struct {
 	*webserver.Server
 	dbConn   db.Connection
-	producer *kafka.Producer
+	producer *producer.Producer
 }
 
 func main() {
@@ -57,6 +58,7 @@ func main() {
 	}
 	srv.AddHandler("/login", login)
 	srv.AddHandler("/oauth2", oauth)
+
 	srv.AddHandle("/tasks", authHandler(http.HandlerFunc(srv.listTasks)))
 	srv.AddHandle("/create", authHandler(http.HandlerFunc(srv.createTask)))
 	srv.AddHandle("/update", authHandler(http.HandlerFunc(srv.updateTask)))
@@ -67,20 +69,17 @@ func main() {
 		go func() {
 			for {
 				uid := <-ch
-				log.Println("uid to update", uid)
+
 				mux.Lock()
 				accountsToUpdate[uid] = true
 				mux.Unlock()
 			}
 		}()
-		c := kafka.Consumer{
-			DBConn:      srv.dbConn,
-			RoleChanges: ch,
-		}
-		c.Run()
+
+		consumer.NewConsumer(srv.dbConn, ch).Run()
 	}()
 
-	srv.producer = kafka.NewProducer()
+	srv.producer = producer.NewProducer()
 	go func() {
 		srv.producer.Run()
 	}()
