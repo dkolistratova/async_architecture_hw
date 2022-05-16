@@ -9,10 +9,11 @@ import (
 
 type Task struct {
 	gorm.Model
-	PublicID    uuid.UUID
-	OwnerID     uuid.UUID
-	Status      Status
-	Description string
+	PublicID    uuid.UUID `json:"public_id"`
+	OwnerID     uuid.UUID `json:"owner_id"`
+	Status      Status    `json:"status"`
+	Description string    `json:"description"`
+	Title       string    `json:"title"`
 }
 
 type Status int
@@ -51,9 +52,8 @@ func (c *Connection) GetTask(id string) (*Task, error) {
 		return nil, fmt.Errorf("parse id failed: %w", err)
 	}
 
-	task := Task{PublicID: uid}
-	res := c.Find(&task)
-	fmt.Println(task)
+	var task Task
+	res := c.Where(&Task{PublicID: uid}).First(&task)
 	if res.Error != nil {
 		return nil, fmt.Errorf("get task failed: %w", err)
 	}
@@ -64,11 +64,19 @@ func (c *Connection) GetTask(id string) (*Task, error) {
 func (c *Connection) GetAllTasks() ([]Task, error) {
 	allTasks := []Task{}
 	res := c.Find(&allTasks)
-	fmt.Println(allTasks)
 	if res.Error != nil {
 		return nil, fmt.Errorf("get all tasks failed: %s", res.Error)
 	}
 	return allTasks, nil
+}
+
+func (c *Connection) GetAllDoneTasks() ([]Task, error) {
+	all := []Task{}
+	res := c.Where("status = ?", Status_Done).Find(&all)
+	if res.Error != nil {
+		return nil, fmt.Errorf("get done tasks by id failed: %s", res.Error)
+	}
+	return all, nil
 }
 
 func (c *Connection) UpdateTask(id, descr, status string) (*Task, error) {

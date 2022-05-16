@@ -2,19 +2,20 @@ package db
 
 import (
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/google/uuid"
+	pq "github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
-type JiraAccount struct {
+type BillingAccount struct {
 	gorm.Model
-	PublicID uuid.UUID `json:"public_id"`
-	Role     *Role     `json:"role"`
-	Email    string    `json:"email"`
-	FullName string    `json:"full_name"`
+	PublicID       uuid.UUID
+	Role           *Role
+	Balance        int
+	Email          string
+	TransactionLog pq.StringArray `gorm:"type:text[]"`
 }
 
 type Role int
@@ -59,14 +60,14 @@ func (r *Role) UnmarshalText(s string) {
 	}
 }
 
-func (c *Connection) GetAccount(id string) (*JiraAccount, error) {
+func (c *Connection) GetAccount(id string) (*BillingAccount, error) {
 	uid, err := uuid.Parse(id)
 	if err != nil {
 		return nil, fmt.Errorf("parse id failed: %w", err)
 	}
 
-	var acc JiraAccount
-	res := c.Where(&JiraAccount{PublicID: uid}).First(&acc)
+	var acc BillingAccount
+	res := c.Where(&BillingAccount{PublicID: uid}).First(&acc)
 	if res.Error != nil {
 		if strings.Contains(res.Error.Error(), "record not found") {
 			return &acc, nil
@@ -77,8 +78,8 @@ func (c *Connection) GetAccount(id string) (*JiraAccount, error) {
 	return &acc, nil
 }
 
-func (c *Connection) GetAllAccounts() ([]JiraAccount, error) {
-	allAccs := []JiraAccount{}
+func (c *Connection) GetAllAccounts() ([]BillingAccount, error) {
+	allAccs := []BillingAccount{}
 	res := c.Find(&allAccs)
 	if res.Error != nil {
 		return nil, fmt.Errorf("get all accs failed: %s", res.Error)
@@ -86,25 +87,39 @@ func (c *Connection) GetAllAccounts() ([]JiraAccount, error) {
 	return allAccs, nil
 }
 
-func (c *Connection) UpdateAccount(id, role, email string) (*JiraAccount, error) {
+type UpdateBillingAccountReq struct {
+	Role           string
+	Balance        *int
+	Email          *string
+	TransactionLog pq.StringArray
+}
+
+func (c *Connection) UpdateAccount(id string, req UpdateBillingAccountReq) (*BillingAccount, error) {
 	acc, err := c.GetAccount(id)
 	if err != nil {
 		return nil, err
 	}
 
-	if role != "" {
-		acc.Role.UnmarshalText(role)
+	if req.Role != "" {
+		acc.Role.UnmarshalText(req.Role)
 	}
 
-	if email != "" {
-		acc.Email = email
+	if req.Balance != nil {
+		acc.Balance = *req.Balance
+	}
+
+	if req.Email != nil {
+		acc.Email = *req.Email
+	}
+
+	if req.TransactionLog != nil {
+		acc.TransactionLog = req.TransactionLog
 	}
 
 	return acc, c.SaveAccount(acc)
 }
 
-func (c *Connection) SaveAccount(acc *JiraAccount) error {
-	log.Println("saving acc", acc)
+func (c *Connection) SaveAccount(acc *BillingAccount) error {
 	res := c.Save(acc)
 	if res.Error != nil {
 		return fmt.Errorf("acc save failed: %s", res.Error)
@@ -112,7 +127,7 @@ func (c *Connection) SaveAccount(acc *JiraAccount) error {
 	return nil
 }
 
-func (c *Connection) CreateAccount(acc *JiraAccount) error {
+func (c *Connection) CreateAccount(acc *BillingAccount) error {
 	lookup, err := c.GetAccount(acc.PublicID.String())
 	if err != nil {
 		return err
