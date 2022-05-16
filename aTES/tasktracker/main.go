@@ -158,12 +158,14 @@ func (srv *Server) shuffleTasks(w http.ResponseWriter, r *http.Request) {
 		internalError(w)
 		return
 	}
+
 	allAccs, err := srv.dbConn.GetAllAccounts()
 	if err != nil {
 		log.Println("shuffle get all accs err", err)
 		internalError(w)
 		return
 	}
+
 	var accs []uuid.UUID
 	for _, a := range allAccs {
 		if a.Role == nil || *a.Role == db.Role_Worker {
@@ -172,19 +174,24 @@ func (srv *Server) shuffleTasks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(accs) == 0 || len(allTasks) == 0 {
+		log.Println("nothing to shuffle")
 		http.Redirect(w, r, "/tasks", http.StatusTemporaryRedirect)
 		return
 	}
 
 	for _, t := range allTasks {
-		if t.Status != db.Status_Done {
-			t.OwnerID = accs[rand.Intn(len(accs))]
-			if err := srv.dbConn.SaveTask(&t); err != nil {
-				log.Println("task save failed", err)
-			} else {
-				srv.producer.TaskUpdatedMsg(t)
-				srv.producer.TaskAssigned(t)
-			}
+		t.OwnerID = accs[rand.Intn(len(accs))]
+		if err := srv.dbConn.SaveTask(&t); err != nil {
+			log.Println("task save failed", err)
+		} else {
+			go func() {
+				if err := srv.producer.TaskUpdatedMsg(t); err != nil {
+					log.Println("TaskUpdatedMsg", err)
+				}
+				if err := srv.producer.TaskAssignedMsg(t); err != nil {
+					log.Println("TaskAssignedMsg", err)
+				}
+			}()
 		}
 	}
 
@@ -211,7 +218,14 @@ func (srv *Server) updateTask(w http.ResponseWriter, r *http.Request) {
 		internalError(w)
 		return
 	} else {
-		srv.producer.TaskUpdatedMsg(*t)
+		if err := srv.producer.TaskUpdatedMsg(*t); err != nil {
+			log.Println("TaskUpdatedMsg", err)
+		}
+		if vals.Get("status") == "done" {
+			if err := srv.producer.TaskCompletedMsg(*t); err != nil {
+				log.Println("TaskCompletedMsg", err)
+			}
+		}
 	}
 	http.Redirect(w, r, "/tasks", http.StatusTemporaryRedirect)
 }
@@ -260,7 +274,7 @@ func (srv *Server) createTask(w http.ResponseWriter, r *http.Request) {
 	}
 	var accs []uuid.UUID
 	for _, a := range allAccs {
-		if *a.Role == db.Role_Worker {
+		if a.Role == nil || *a.Role == db.Role_Worker {
 			accs = append(accs, a.PublicID)
 		}
 	}
@@ -274,8 +288,12 @@ func (srv *Server) createTask(w http.ResponseWriter, r *http.Request) {
 	if err := srv.dbConn.Create(t); err != nil {
 		log.Println(err)
 	} else {
-		srv.producer.TaskCreatedMsg(*t)
-		srv.producer.TaskAssigned(*t)
+		if err := srv.producer.TaskCreatedMsg(*t); err != nil {
+			log.Println("TaskCreatedMsg", err)
+		}
+		if err := srv.producer.TaskAssignedMsg(*t); err != nil {
+			log.Println("TaskAssignedMsg", err)
+		}
 	}
 	log.Println("creating task with vals", vals)
 	w.Write([]byte("Done!"))

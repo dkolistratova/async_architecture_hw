@@ -1,4 +1,3 @@
----
 version: '3'
 
 services:
@@ -11,6 +10,9 @@ services:
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - /Users/daria/Documents/dev/volumes/zookeeper/log/version-2/:/var/lib/zookeeper/log/version-2
+      - /Users/daria/Documents/dev/volumes/zookeeper/data/version-2/:/var/lib/zookeeper/data/version-2
     networks:
       - popug-jira
 
@@ -33,6 +35,8 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+    volumes:
+      - /Users/daria/Documents/dev/volumes/kafka:/var/lib/kafka
     networks:
       - popug-jira
 
@@ -67,7 +71,9 @@ services:
 
   tasktracker:
     container_name: tasktracker
-    build: ./tasktracker/.
+    build:
+      context: ./
+      dockerfile: ./tasktracker/Dockerfile
     command: ['go', 'run', 'main.go']
     ports:
       - "3002:3002"
@@ -82,9 +88,29 @@ services:
     networks:
       - popug-jira
 
+  billing:
+    container_name: billing
+    build:
+      context: ./
+      dockerfile: ./billing/Dockerfile
+    command: ['go', 'run', 'main.go']
+    ports:
+      - "3003:3003"
+    depends_on:
+      - db
+      - broker
+      - oauth
+    environment:
+      DATABASE_URL: 'postgres://postgres:password@db:5432/postgres'
+      KAFKA_URL: 'kafka://broker:29092'
+      BROKER_ADAPTER: 'kafka'
+    networks:
+      - popug-jira
+
+
 # network needs to be created manually, by:
 #  docker network create popug-jira
 networks:
   popug-jira:
-    external: true
+    driver: bridge
 

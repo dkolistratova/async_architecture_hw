@@ -1,0 +1,27 @@
+{{ define "home" }}
+<!DOCTYPE html>
+<html lang="en">
+<body>
+
+<h1>Balance: {{ .Balance }}</h1>
+
+<table border="1">
+    <tr>
+      <th>sum</th>
+      <th>type</th>
+      <th>status</th>
+      <th>details</th>
+    </tr>
+    {{ range .Transactions }}
+    <tr>
+    <td>{{ .Cost }}</td>
+    <td>{{ .Type.String }}</td>
+    <td>{{ .Status.String }}</td>
+    <td>{{ .Description }}</td>
+    </tr>
+    {{ end }}
+</table>
+
+</body>
+</html>
+{{ end }}
