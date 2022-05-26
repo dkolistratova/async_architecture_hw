@@ -2,12 +2,13 @@ package producer
 
 import (
 	"encoding/json"
-	"log"
+	"fmt"
 	"os"
 	"tasktracker/db"
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
+	"github.com/dkolistratova/eventschemaregistry"
 	"github.com/google/uuid"
 )
 
@@ -20,29 +21,32 @@ const (
 	TaskDeletedEvt = "TaskDeleted"
 
 	TaskAssignedEvt  = "TaskAssigned"
-	TaskCompletedEvt = "TaskCompeleted"
+	TaskCompletedEvt = "TaskCompleted"
 )
 
 type Producer struct {
 	*kafka.Producer
 	deliveryCh chan kafka.Event
+	validator  *eventschemaregistry.Validator
 }
 
 func NewProducer() *Producer {
 	conf := kafka.ConfigMap{
-		"bootstrap.servers": "broker:9092",
+		"bootstrap.servers": "broker:29092",
 		"client.id":         "localhost:3002",
 		"acks":              "all",
 	}
+
 	pr, err := kafka.NewProducer(&conf)
 	if err != nil {
-		log.Println("consumer failed", err)
+		fmt.Println("NewProducer failed", err)
 		os.Exit(1)
 	}
 
 	return &Producer{
 		Producer:   pr,
 		deliveryCh: make(chan kafka.Event, 10000),
+		validator:  eventschemaregistry.NewValidator("/app/event_schema_registry/schemas"),
 	}
 }
 
@@ -55,15 +59,23 @@ func (p *Producer) Run() {
 				switch ev := e.(type) {
 				case *kafka.Message:
 					if ev.TopicPartition.Error != nil {
-						log.Printf("Failed to deliver message: %v\n", ev.TopicPartition)
+						fmt.Printf("Failed to deliver message: %v\n", ev.TopicPartition)
 					} else {
-						log.Printf("Successfully produced record to topic %s partition [%d] @ offset %v\n",
+						fmt.Printf("Successfully produced record to topic %s partition [%d] @ offset %v\n",
 							*ev.TopicPartition.Topic, ev.TopicPartition.Partition, ev.TopicPartition.Offset)
 					}
 				}
 			}
 		}
 	}()
+}
+
+var validatorByEvtName = map[string]string{
+	TaskAssignedEvt:  "tasks.assigned",
+	TaskCompletedEvt: "tasks.completed",
+	TaskCreatedEvt:   "tasks.created",
+	TaskDeletedEvt:   "tasks.deleted",
+	TaskUpdatedEvt:   "tasks.updated",
 }
 
 func (p *Producer) produceTaskEvt(t db.Task, topic, evtName string) error {
@@ -75,8 +87,15 @@ func (p *Producer) produceTaskEvt(t db.Task, topic, evtName string) error {
 		Data:         t,
 	})
 	if err != nil {
+		fmt.Println("produceTaskEvt err", err)
 		return err
 	}
+	fmt.Println("produceTaskEvt Validate")
+	if err := p.validator.Validate(msg, validatorByEvtName[evtName], 1); err != nil {
+		fmt.Println("produceTaskEvt validation failed", err)
+		return err
+	}
+	fmt.Println("produceTaskEvt Produce")
 	return p.Produce(&kafka.Message{
 		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
 		Value:          msg},
@@ -96,11 +115,11 @@ func (p *Producer) TaskDeletedMsg(t db.Task) error {
 	return p.produceTaskEvt(t, TaskCUDsTopic, TaskDeletedEvt)
 }
 
-func (p *Producer) TaskCompleted(t db.Task) error {
+func (p *Producer) TaskCompletedMsg(t db.Task) error {
 	return p.produceTaskEvt(t, TaskEventsTopic, TaskCompletedEvt)
 }
 
-func (p *Producer) TaskAssigned(t db.Task) error {
+func (p *Producer) TaskAssignedMsg(t db.Task) error {
 	return p.produceTaskEvt(t, TaskEventsTopic, TaskAssignedEvt)
 }
 

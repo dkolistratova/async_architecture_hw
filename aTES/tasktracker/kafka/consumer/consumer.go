@@ -2,7 +2,7 @@ package consumer
 
 import (
 	"encoding/json"
-	"log"
+	"fmt"
 	"os"
 	"tasktracker/db"
 	"time"
@@ -44,7 +44,7 @@ func (consumer *Consumer) Run() {
 	}
 	c, err := kafka.NewConsumer(&conf)
 	if err != nil {
-		log.Println("consumer failed", err)
+		fmt.Println("consumer failed", err)
 		os.Exit(1)
 	}
 
@@ -61,7 +61,7 @@ func (consumer *Consumer) Run() {
 	}
 
 	if err := c.SubscribeTopics(topics, nil); err != nil {
-		log.Println(err)
+		fmt.Println(err)
 	}
 
 	for {
@@ -69,11 +69,11 @@ func (consumer *Consumer) Run() {
 		if err != nil {
 			continue
 		}
-		log.Printf("Consumed event from topic %s: key = %-10s value = %s\n",
+		fmt.Printf("Consumed event from topic %s: key = %-10s value = %s\n",
 			*ev.TopicPartition.Topic, string(ev.Key), string(ev.Value))
 		if processor, ok := topicProcessors[*ev.TopicPartition.Topic]; ok {
 			go func() {
-				log.Println(processor(ev))
+				fmt.Println(processor(ev))
 			}()
 		}
 	}
@@ -106,7 +106,7 @@ func (c *Consumer) processAccountEvts(msg *kafka.Message) error {
 		acc.Role.UnmarshalText(data.Data.Role)
 		return c.DBConn.SaveAccount(acc)
 	default:
-		log.Println("ignoring unknown event", payload.EventName)
+		fmt.Println("ignoring unknown event", payload.EventName)
 	}
 
 	return nil
@@ -130,6 +130,19 @@ func (c *Consumer) processAccountsCUDs(msg *kafka.Message) error {
 			return err
 		}
 
+		if acc.ID == 0 {
+			uid, err := uuid.Parse(data.Data.PublicID)
+			if err != nil {
+				return err
+			}
+
+			return c.DBConn.CreateAccount(&db.JiraAccount{
+				PublicID: uid,
+				Email:    data.Data.Email,
+				FullName: data.Data.FullName,
+			})
+		}
+
 		acc.Email = data.Data.Email
 		acc.FullName = data.Data.FullName
 		return c.DBConn.SaveAccount(acc)
@@ -150,7 +163,7 @@ func (c *Consumer) processAccountsCUDs(msg *kafka.Message) error {
 			FullName: data.Data.FullName,
 		})
 	default:
-		log.Println("ignoring unknown event", payload.EventName)
+		fmt.Println("ignoring unknown event", payload.EventName)
 	}
 
 	return nil
